@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Table,
   TableBody,
@@ -25,24 +25,33 @@ interface StockTableProps {
 
 export function StockTable({ limit, showViewAllLink = false }: StockTableProps) {
   const { toast } = useToast();
-  const { data: stockItems = [], isLoading, isError, refetch } = useQuery<StockItem[]>({
+  const { 
+    data: stockItems = [], 
+    isLoading, 
+    isError, 
+    refetch 
+  } = useQuery<StockItem[]>({
     queryKey: ["/api/stock"],
     refetchOnWindowFocus: true,
-    staleTime: 10000, // Refresh data if it's older than 10 seconds
+    staleTime: 1000, // Refresh data if it's older than 1 second
+    refetchInterval: 5000, // Auto refresh every 5 seconds
     retry: 2,
     onSuccess: () => {
       console.log("Stock items loaded successfully");
     },
-    onSettled: (_data, error) => {
-      if (error) {
-        toast({
-          title: "Error fetching stock items",
-          description: "There was a problem loading the inventory items.",
-          variant: "destructive",
-        });
-      }
+    onError: (error) => {
+      toast({
+        title: "Error fetching stock items",
+        description: "There was a problem loading the inventory items.",
+        variant: "destructive",
+      });
     }
   });
+  
+  // Refresh when component mounts
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
   
   const [page, setPage] = useState(1);
   const pageSize = limit || 10;
