@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
@@ -17,8 +17,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
-import { InsertStockItem } from "@shared/schema";
+import { Loader2, Upload, Image as ImageIcon } from "lucide-react";
+import { InsertStockItem, StockItem } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
 
 interface StockFormProps {
   onSuccess?: () => void;
@@ -29,16 +30,21 @@ interface StockFormProps {
 const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   uniqueNumber: z.string().min(3, "Item ID must be at least 3 characters"),
-  category: z.string().optional(),
+  category: z.string().min(1, "Category is required"),
   quantity: z.coerce.number().min(0, "Quantity cannot be negative"),
-  expiryDate: z.string().optional(),
-  imageUrl: z.string().optional(),
+  expiryDate: z.string().optional().nullable(),
+  imageUrl: z.string().optional().nullable(),
 });
+
+type FormValues = z.infer<typeof formSchema>;
 
 export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(initialData?.imageUrl || null);
   
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: initialData || {
       name: "",
@@ -50,11 +56,11 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
     },
   });
   
-  const mutation = useMutation({
-    mutationFn: async (values: z.infer<typeof formSchema>) => {
+  const mutation = useMutation<StockItem, Error, FormValues>({
+    mutationFn: async (values: FormValues) => {
       const formattedValues = {
         ...values,
-        expiryDate: values.expiryDate ? new Date(values.expiryDate).toISOString() : undefined,
+        expiryDate: values.expiryDate ? new Date(values.expiryDate).toISOString() : null,
       };
       
       const response = await apiRequest(
@@ -72,6 +78,8 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
       });
       queryClient.invalidateQueries({ queryKey: ["/api/stock"] });
       if (onSuccess) onSuccess();
+      form.reset();
+      setImagePreview(null);
     },
     onError: (error) => {
       toast({
@@ -82,9 +90,23 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
     },
   });
   
-  function onSubmit(values: z.infer<typeof formSchema>) {
+  function onSubmit(values: FormValues) {
     mutation.mutate(values);
   }
+
+  // Handle file upload
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setImagePreview(base64String);
+        form.setValue("imageUrl", base64String);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
   
   return (
     <Form {...form}>
@@ -94,9 +116,9 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Item Name</FormLabel>
+              <FormLabel className="after:content-['*'] after:ml-0.5 after:text-red-500">Item Name</FormLabel>
               <FormControl>
-                <Input placeholder="Enter item name" {...field} />
+                <Input placeholder="Enter item name" {...field} required />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -108,9 +130,9 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
           name="uniqueNumber"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Unique Number</FormLabel>
+              <FormLabel className="after:content-['*'] after:ml-0.5 after:text-red-500">Unique Number</FormLabel>
               <FormControl>
-                <Input placeholder="e.g., CPK-2023-001" {...field} />
+                <Input placeholder="e.g., CPK-2023-001" {...field} required />
               </FormControl>
               <FormDescription>
                 A unique identifier for this stock item
@@ -125,9 +147,9 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
           name="category"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Category</FormLabel>
+              <FormLabel className="after:content-['*'] after:ml-0.5 after:text-red-500">Category</FormLabel>
               <FormControl>
-                <Input placeholder="e.g., Cardiovascular" {...field} />
+                <Input placeholder="e.g., Cardiovascular" {...field} required />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -139,9 +161,9 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
           name="quantity"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Quantity</FormLabel>
+              <FormLabel className="after:content-['*'] after:ml-0.5 after:text-red-500">Quantity</FormLabel>
               <FormControl>
-                <Input type="number" {...field} />
+                <Input type="number" {...field} required />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -153,7 +175,7 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
           name="expiryDate"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Expiry Date</FormLabel>
+              <FormLabel>Expiry Date (Optional)</FormLabel>
               <FormControl>
                 <Input type="date" {...field} />
               </FormControl>
@@ -167,9 +189,44 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
           name="imageUrl"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Image URL</FormLabel>
+              <FormLabel>Product Image (Optional)</FormLabel>
               <FormControl>
-                <Input placeholder="URL to item image" {...field} />
+                <div className="flex flex-col items-center space-y-4">
+                  <input 
+                    type="file" 
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept="image/*"
+                    className="hidden"
+                  />
+                  
+                  <div 
+                    className="border-2 border-dashed rounded-md p-6 w-full flex flex-col items-center cursor-pointer hover:bg-gray-50"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {imagePreview ? (
+                      <div className="flex flex-col items-center">
+                        <img 
+                          src={imagePreview} 
+                          alt="Item preview" 
+                          className="h-40 w-40 object-contain mb-2"
+                        />
+                        <p className="text-sm text-gray-500">Click to change image</p>
+                      </div>
+                    ) : (
+                      <>
+                        <ImageIcon className="h-12 w-12 text-gray-400 mb-2" />
+                        <p className="text-sm text-gray-500">Click to upload an image</p>
+                      </>
+                    )}
+                  </div>
+                  
+                  <input 
+                    type="hidden" 
+                    {...field} 
+                    value={imagePreview || ""} 
+                  />
+                </div>
               </FormControl>
               <FormMessage />
             </FormItem>

@@ -11,10 +11,12 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Package, Edit, ShoppingCart, Eye } from "lucide-react";
+import { Package, Edit, ShoppingCart, Eye, RefreshCw } from "lucide-react";
 import { Link } from "wouter";
 import { StockItem } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
 
 interface StockTableProps {
   limit?: number;
@@ -22,12 +24,36 @@ interface StockTableProps {
 }
 
 export function StockTable({ limit, showViewAllLink = false }: StockTableProps) {
-  const { data: stockItems, isLoading } = useQuery({
+  const { toast } = useToast();
+  const { data: stockItems = [], isLoading, isError, refetch } = useQuery<StockItem[]>({
     queryKey: ["/api/stock"],
+    refetchOnWindowFocus: true,
+    staleTime: 10000, // Refresh data if it's older than 10 seconds
+    retry: 2,
+    onSuccess: () => {
+      console.log("Stock items loaded successfully");
+    },
+    onSettled: (_data, error) => {
+      if (error) {
+        toast({
+          title: "Error fetching stock items",
+          description: "There was a problem loading the inventory items.",
+          variant: "destructive",
+        });
+      }
+    }
   });
   
   const [page, setPage] = useState(1);
   const pageSize = limit || 10;
+  
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/stock"] });
+    toast({
+      title: "Refreshing inventory",
+      description: "Refreshing the inventory items list...",
+    });
+  };
   
   if (isLoading) {
     return (
@@ -76,6 +102,18 @@ export function StockTable({ limit, showViewAllLink = false }: StockTableProps) 
 
   return (
     <div className="w-full rounded-md border">
+      <div className="flex justify-between items-center p-4 border-b">
+        <h3 className="text-lg font-medium">Inventory Items</h3>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={handleRefresh}
+          className="flex items-center gap-1"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
+      </div>
       <div className="relative w-full overflow-auto">
         <Table>
           <TableHeader>
