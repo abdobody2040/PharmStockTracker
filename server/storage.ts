@@ -1,11 +1,15 @@
 import { 
   User, InsertUser, StockItem, InsertStockItem, 
-  Allocation, InsertAllocation, Movement, InsertMovement
+  Allocation, InsertAllocation, Movement, InsertMovement,
+  users, stockItems, allocations, movements, UserRole
 } from "@shared/schema";
 import session from "express-session";
-import createMemoryStore from "memorystore";
+import connectPg from "connect-pg-simple";
+import { db, pool } from "./db";
+import { eq, and, lte, gte } from "drizzle-orm";
+import { addDays } from "date-fns";
 
-const MemoryStore = createMemoryStore(session);
+const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
   // User methods
@@ -39,176 +43,164 @@ export interface IStorage {
   sessionStore: session.SessionStore;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private stockItems: Map<number, StockItem>;
-  private allocations: Map<number, Allocation>;
-  private movements: Map<number, Movement>;
+export class DatabaseStorage implements IStorage {
   sessionStore: session.SessionStore;
   
-  private userIdCounter: number;
-  private stockIdCounter: number;
-  private allocationIdCounter: number;
-  private movementIdCounter: number;
-
   constructor() {
-    this.users = new Map();
-    this.stockItems = new Map();
-    this.allocations = new Map();
-    this.movements = new Map();
-    
-    this.userIdCounter = 1;
-    this.stockIdCounter = 1;
-    this.allocationIdCounter = 1;
-    this.movementIdCounter = 1;
-    
-    this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000 // prune expired entries every 24h
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      createTableIfMissing: true
     });
   }
-
+  
   // User methods
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username
-    );
-  }
-
-  async createUser(userData: InsertUser): Promise<User> {
-    const id = this.userIdCounter++;
-    const user: User = { ...userData, id };
-    this.users.set(id, user);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
-
+  
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+  
+  async createUser(userData: InsertUser): Promise<User> {
+    const [user] = await db.insert(users).values({
+      ...userData,
+      createdAt: new Date()
+    }).returning();
+    return user;
+  }
+  
   async getAllUsers(): Promise<User[]> {
-    return Array.from(this.users.values());
+    return await db.select().from(users);
   }
-
+  
   async getUsersByRole(role: string): Promise<User[]> {
-    return Array.from(this.users.values()).filter(user => user.role === role);
+    return await db.select().from(users).where(eq(users.role, role));
   }
-
+  
   // Stock methods
   async getStockItem(id: number): Promise<StockItem | undefined> {
-    return this.stockItems.get(id);
-  }
-
-  async getStockItemByUniqueNumber(uniqueNumber: string): Promise<StockItem | undefined> {
-    return Array.from(this.stockItems.values()).find(
-      (item) => item.uniqueNumber === uniqueNumber
-    );
-  }
-
-  async createStockItem(itemData: InsertStockItem): Promise<StockItem> {
-    const id = this.stockIdCounter++;
-    const now = new Date();
-    const item: StockItem = { 
-      ...itemData, 
-      id, 
-      createdAt: now 
-    };
-    this.stockItems.set(id, item);
+    const [item] = await db.select().from(stockItems).where(eq(stockItems.id, id));
     return item;
   }
-
+  
+  async getStockItemByUniqueNumber(uniqueNumber: string): Promise<StockItem | undefined> {
+    const [item] = await db.select().from(stockItems).where(eq(stockItems.uniqueNumber, uniqueNumber));
+    return item;
+  }
+  
+  async createStockItem(itemData: InsertStockItem): Promise<StockItem> {
+    const [item] = await db.insert(stockItems).values({
+      ...itemData,
+      createdAt: new Date()
+    }).returning();
+    return item;
+  }
+  
   async updateStockItem(id: number, itemData: Partial<StockItem>): Promise<StockItem | undefined> {
-    const item = this.stockItems.get(id);
-    if (!item) return undefined;
-    
-    const updatedItem = { ...item, ...itemData };
-    this.stockItems.set(id, updatedItem);
+    const [updatedItem] = await db.update(stockItems)
+      .set(itemData)
+      .where(eq(stockItems.id, id))
+      .returning();
     return updatedItem;
   }
-
+  
   async getAllStockItems(): Promise<StockItem[]> {
-    return Array.from(this.stockItems.values());
+    return await db.select().from(stockItems);
   }
-
+  
   async getExpiringStockItems(days: number): Promise<StockItem[]> {
-    const threshold = new Date();
-    threshold.setDate(threshold.getDate() + days);
-    
-    return Array.from(this.stockItems.values()).filter(item => {
-      if (!item.expiryDate) return false;
-      const expiry = new Date(item.expiryDate);
-      return expiry <= threshold;
-    });
-  }
-
-  async getLowStockItems(threshold: number): Promise<StockItem[]> {
-    return Array.from(this.stockItems.values()).filter(item => {
-      return item.quantity <= threshold;
-    });
-  }
-
-  // Allocation methods
-  async getAllocationsForUser(userId: number): Promise<Allocation[]> {
-    return Array.from(this.allocations.values()).filter(
-      allocation => allocation.userId === userId
+    const threshold = addDays(new Date(), days);
+    return await db.select().from(stockItems).where(
+      and(
+        stockItems.expiryDate.isNotNull(),
+        lte(stockItems.expiryDate, threshold)
+      )
     );
   }
-
+  
+  async getLowStockItems(threshold: number): Promise<StockItem[]> {
+    return await db.select().from(stockItems).where(
+      lte(stockItems.quantity, threshold)
+    );
+  }
+  
+  // Allocation methods
+  async getAllocationsForUser(userId: number): Promise<Allocation[]> {
+    return await db.select().from(allocations).where(eq(allocations.userId, userId));
+  }
+  
   async createAllocation(allocationData: InsertAllocation): Promise<Allocation> {
-    const id = this.allocationIdCounter++;
-    const now = new Date();
-    const allocation: Allocation = {
+    // Create the allocation
+    const [allocation] = await db.insert(allocations).values({
       ...allocationData,
-      id,
       status: "pending",
-      allocatedAt: now
-    };
-    this.allocations.set(id, allocation);
+      allocatedAt: new Date()
+    }).returning();
     
-    // Update stock item quantity
-    const stockItem = this.stockItems.get(allocationData.stockItemId);
+    // Update stock quantity
+    const stockItem = await this.getStockItem(allocation.stockItemId);
     if (stockItem) {
-      const newQuantity = stockItem.quantity - allocationData.quantity;
-      this.stockItems.set(stockItem.id, { ...stockItem, quantity: newQuantity });
+      await this.updateStockItem(stockItem.id, {
+        quantity: stockItem.quantity - allocation.quantity
+      });
     }
     
     return allocation;
   }
-
+  
   async updateAllocationStatus(id: number, status: string): Promise<Allocation | undefined> {
-    const allocation = this.allocations.get(id);
+    // Get the existing allocation first
+    const allocation = await this.getallocation(id);
     if (!allocation) return undefined;
     
-    const updatedAllocation = { ...allocation, status };
-    this.allocations.set(id, updatedAllocation);
+    // If status is changing to cancelled and wasn't cancelled before, return stock
+    if (status === "cancelled" && allocation.status !== "cancelled") {
+      const stockItem = await this.getStockItem(allocation.stockItemId);
+      if (stockItem) {
+        await this.updateStockItem(stockItem.id, {
+          quantity: stockItem.quantity + allocation.quantity
+        });
+      }
+    }
+    
+    // Update the allocation status
+    const [updatedAllocation] = await db.update(allocations)
+      .set({ status })
+      .where(eq(allocations.id, id))
+      .returning();
+    
     return updatedAllocation;
   }
-
-  async getAllocations(): Promise<Allocation[]> {
-    return Array.from(this.allocations.values());
+  
+  async getallocation(id: number): Promise<Allocation | undefined> {
+    const [allocation] = await db.select().from(allocations).where(eq(allocations.id, id));
+    return allocation;
   }
-
+  
+  async getAllocations(): Promise<Allocation[]> {
+    return await db.select().from(allocations);
+  }
+  
   // Movement methods
   async createMovement(movementData: InsertMovement): Promise<Movement> {
-    const id = this.movementIdCounter++;
-    const now = new Date();
-    const movement: Movement = {
+    const [movement] = await db.insert(movements).values({
       ...movementData,
-      id,
-      performedAt: now
-    };
-    this.movements.set(id, movement);
+      performedAt: new Date()
+    }).returning();
+    
     return movement;
   }
-
+  
   async getMovementsForStockItem(stockItemId: number): Promise<Movement[]> {
-    return Array.from(this.movements.values()).filter(
-      movement => movement.stockItemId === stockItemId
-    );
+    return await db.select().from(movements).where(eq(movements.stockItemId, stockItemId));
   }
-
+  
   async getAllMovements(): Promise<Movement[]> {
-    return Array.from(this.movements.values());
+    return await db.select().from(movements);
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
