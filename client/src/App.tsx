@@ -10,6 +10,7 @@ import UsersPage from "@/pages/users-page";
 import ReportsPage from "@/pages/reports-page";
 import { ProtectedRoute } from "./lib/protected-route";
 import { UserRole } from "@shared/schema";
+import { AuthProvider } from "./hooks/use-auth";
 
 function Router() {
   return (
@@ -35,10 +36,12 @@ function Router() {
 
 function App() {
   return (
-    <TooltipProvider>
-      <Toaster />
-      <Router />
-    </TooltipProvider>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Router />
+      </TooltipProvider>
+    </AuthProvider>
   );
 }
 
