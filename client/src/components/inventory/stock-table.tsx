@@ -149,15 +149,43 @@ export function StockTable({ limit, showViewAllLink = false }: StockTableProps) 
                   <TableCell>{formatExpiry(item.expiryDate)}</TableCell>
                   <TableCell>{getStatusBadge(item)}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" className="text-primary">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-primary"
+                      onClick={() => {
+                        toast({
+                          title: "View Item Details",
+                          description: `Viewing details for ${item.name}`,
+                        });
+                      }}
+                    >
                       <Eye className="h-4 w-4" />
                       <span className="sr-only">View</span>
                     </Button>
-                    <Button variant="ghost" size="sm">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => {
+                        toast({
+                          title: "Edit Item",
+                          description: `Editing ${item.name}`,
+                        });
+                      }}
+                    >
                       <Edit className="h-4 w-4" />
                       <span className="sr-only">Edit</span>
                     </Button>
-                    <Button variant="ghost" size="sm">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => {
+                        toast({
+                          title: "Allocate Item",
+                          description: `Allocating ${item.name} to users`,
+                        });
+                      }}
+                    >
                       <ShoppingCart className="h-4 w-4" />
                       <span className="sr-only">Allocate</span>
                     </Button>

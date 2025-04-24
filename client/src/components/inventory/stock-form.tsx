@@ -94,16 +94,53 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
     mutation.mutate(values);
   }
 
-  // Handle file upload
+  // Handle file upload with image resizing to reduce size
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      // Create an image object to resize the image before converting to base64
+      const img = new Image();
       const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setImagePreview(base64String);
-        form.setValue("imageUrl", base64String);
+      
+      reader.onload = (e) => {
+        img.src = e.target?.result as string;
+        
+        img.onload = () => {
+          // Create a canvas to resize the image
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // Resize image if it's too large (max 800px width/height)
+          const maxSize = 800;
+          if (width > maxSize || height > maxSize) {
+            if (width > height) {
+              height = Math.round(height * (maxSize / width));
+              width = maxSize;
+            } else {
+              width = Math.round(width * (maxSize / height));
+              height = maxSize;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          // Draw the resized image on the canvas
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Convert canvas to base64 with reduced quality (0.7)
+            const resizedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+            
+            // Set the preview and form value
+            setImagePreview(resizedBase64);
+            form.setValue("imageUrl", resizedBase64);
+          }
+        };
       };
+      
       reader.readAsDataURL(file);
     }
   };
