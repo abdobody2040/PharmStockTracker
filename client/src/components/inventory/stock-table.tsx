@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import {
   Table,
@@ -16,7 +16,7 @@ import { Link } from "wouter";
 import { StockItem } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
+//import { queryClient } from "@/lib/queryClient";
 
 interface StockTableProps {
   limit?: number;
@@ -55,6 +55,8 @@ export function StockTable({ limit, showViewAllLink = false }: StockTableProps) 
   
   const [page, setPage] = useState(1);
   const pageSize = limit || 10;
+  
+  const queryClient = useQueryClient();
   
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/stock"] });

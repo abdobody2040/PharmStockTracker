@@ -58,10 +58,14 @@ export function StockForm({ onSuccess, initialData, isEdit = false }: StockFormP
   
   const mutation = useMutation<StockItem, Error, FormValues>({
     mutationFn: async (values: FormValues) => {
+      // Add creator ID if user is available
       const formattedValues = {
         ...values,
+        createdBy: user?.id || 1, // Fallback to admin user if no user context
         expiryDate: values.expiryDate ? new Date(values.expiryDate).toISOString() : null,
       };
+      
+      console.log("Submitting stock item:", formattedValues);
       
       const response = await apiRequest(
         isEdit ? "PUT" : "POST",
